@@ -73,3 +73,32 @@ Route::middleware('auth')->group(function () {
         Route::delete('/users/{user}', [AdminUserController::class, 'destroy'])->name('users.destroy');
     });
 });
+
+Route::get('/clear-config', function () {
+    \Artisan::call('optimize:clear');
+    return 'cleared';
+});
+
+Route::get('/mail-config-check', function () {
+    return response()->json([
+        'mailer' => env('MAIL_MAILER'),
+        'host' => env('MAIL_HOST'),
+        'port' => env('MAIL_PORT'),
+        'username' => env('MAIL_USERNAME'),
+        'from' => env('MAIL_FROM_ADDRESS'),
+        'encryption' => env('MAIL_ENCRYPTION'),
+    ]);
+});
+
+Route::get('/test-mail', function () {
+    try {
+        Mail::raw('Test email from Railway + Brevo', function ($message) {
+            $message->to('carloonlineclass@gmail.com')
+                    ->subject('TEST EMAIL');
+        });
+
+        return 'Email sent!';
+    } catch (\Throwable $e) {
+        return '<pre>'.$e->getMessage().'</pre>';
+    }
+});
