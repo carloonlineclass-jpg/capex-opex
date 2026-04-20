@@ -72,10 +72,8 @@ Route::middleware('auth')->group(function () {
         Route::put('/users/{user}', [AdminUserController::class, 'update'])->name('users.update');
         Route::delete('/users/{user}', [AdminUserController::class, 'destroy'])->name('users.destroy');
     });
-
-    Route::get('/seed', function () {
+});
+Route::get('/seed', function () {
     \Artisan::call('migrate --seed --force');
-    return 'Database Seeded!';
-    });
-
+    return nl2br(\Artisan::output());
 });
