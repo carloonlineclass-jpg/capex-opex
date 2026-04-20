@@ -7,8 +7,8 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
@@ -30,60 +30,33 @@ class AuthController extends Controller
         ]);
     }
 
-   public function sendVerificationCode(Request $request)
-{
-    $validated = $request->validate([
-        'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-    ]);
-
-    $code = (string) random_int(100000, 999999);
-
-    $request->session()->put(self::REGISTRATION_CODE_KEY, [
-        'email' => $validated['email'],
-        'code_hash' => Hash::make($code),
-        'expires_at' => now()->addMinutes(10)->timestamp,
-    ]);
-
-    $request->session()->forget(self::REGISTRATION_VERIFIED_KEY);
-
-    try {
-        $response = Http::withHeaders([
-            'accept' => 'application/json',
-            'api-key' => env('BREVO_API_KEY'),
-            'content-type' => 'application/json',
-        ])->post('https://api.brevo.com/v3/smtp/email', [
-            'sender' => [
-                'name' => env('MAIL_FROM_NAME', 'Capex Opex'),
-                'email' => env('MAIL_FROM_ADDRESS', 'carloonlineclass@gmail.com'),
-            ],
-            'to' => [
-                ['email' => $validated['email']],
-            ],
-            'subject' => 'Your Account Verification Code',
-            'textContent' => "Your verification code is: {$code}\n\nThis code will expire in 10 minutes.",
+    public function sendVerificationCode(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
         ]);
 
-        if (! $response->successful()) {
-            Log::error('BREVO API ERROR: '.$response->body());
+        $code = (string) random_int(100000, 999999);
 
-            return back()->with('error', 'Email failed. Your code is: '.$code)
-                ->withInput([
-                    'email' => $validated['email'],
-                ]);
-        }
-    } catch (\Throwable $e) {
-        Log::error('BREVO API EXCEPTION: '.$e->getMessage());
+        $request->session()->put(self::REGISTRATION_CODE_KEY, [
+            'email' => $validated['email'],
+            'code_hash' => Hash::make($code),
+            'expires_at' => now()->addMinutes(10)->timestamp,
+        ]);
+        $request->session()->forget(self::REGISTRATION_VERIFIED_KEY);
 
-        return back()->with('error', 'Email failed. Your code is: '.$code)
-            ->withInput([
-                'email' => $validated['email'],
-            ]);
+        Mail::raw(
+            "Your verification code is: {$code}\n\nThis code will expire in 10 minutes.",
+            function ($message) use ($validated) {
+                $message->to($validated['email'])
+                    ->subject('Your Account Verification Code');
+            }
+        );
+
+        return back()->with('success', 'Verification code sent to your email.')->withInput([
+            'email' => $validated['email'],
+        ]);
     }
-
-    return back()->with('success', 'Verification code sent to your email.')->withInput([
-        'email' => $validated['email'],
-    ]);
-}
 
     public function verifyCode(Request $request)
     {
@@ -174,14 +147,12 @@ class AuthController extends Controller
             $request->session()->regenerate();
 
             $user = Auth::user();
-
             if ($user && !$user->is_approved) {
                 Auth::logout();
                 $request->session()->invalidate();
                 $request->session()->regenerateToken();
                 return back()->withErrors(['email' => 'Your account is still pending admin approval.'])->onlyInput('email');
             }
-
             if ($user && Hash::needsRehash($user->password)) {
                 $user->forceFill([
                     'password' => Hash::driver('bcrypt')->make($credentials['password'], [
@@ -201,7 +172,6 @@ class AuthController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-
         return redirect()->route('login');
     }
 }
