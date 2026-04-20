@@ -43,15 +43,27 @@ class AuthController extends Controller
             'code_hash' => Hash::make($code),
             'expires_at' => now()->addMinutes(10)->timestamp,
         ]);
+
         $request->session()->forget(self::REGISTRATION_VERIFIED_KEY);
 
-        Mail::raw(
-            "Your verification code is: {$code}\n\nThis code will expire in 10 minutes.",
-            function ($message) use ($validated) {
-                $message->to($validated['email'])
-                    ->subject('Your Account Verification Code');
-            }
-        );
+        // ✅ FIXED EMAIL SENDING WITH ERROR HANDLING
+        try {
+            Mail::raw(
+                "Your verification code is: {$code}\n\nThis code will expire in 10 minutes.",
+                function ($message) use ($validated) {
+                    $message->to($validated['email'])
+                        ->subject('Your Account Verification Code');
+                }
+            );
+        } catch (\Throwable $e) {
+            \Log::error('MAIL ERROR: '.$e->getMessage());
+
+            // fallback (para makita mo code kahit failed email)
+            return back()->with('error', 'Email failed. Your code is: '.$code)
+                ->withInput([
+                    'email' => $validated['email'],
+                ]);
+        }
 
         return back()->with('success', 'Verification code sent to your email.')->withInput([
             'email' => $validated['email'],
@@ -147,12 +159,14 @@ class AuthController extends Controller
             $request->session()->regenerate();
 
             $user = Auth::user();
+
             if ($user && !$user->is_approved) {
                 Auth::logout();
                 $request->session()->invalidate();
                 $request->session()->regenerateToken();
                 return back()->withErrors(['email' => 'Your account is still pending admin approval.'])->onlyInput('email');
             }
+
             if ($user && Hash::needsRehash($user->password)) {
                 $user->forceFill([
                     'password' => Hash::driver('bcrypt')->make($credentials['password'], [
@@ -172,6 +186,7 @@ class AuthController extends Controller
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
         return redirect()->route('login');
     }
 }
