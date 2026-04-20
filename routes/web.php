@@ -73,7 +73,3 @@ Route::middleware('auth')->group(function () {
         Route::delete('/users/{user}', [AdminUserController::class, 'destroy'])->name('users.destroy');
     });
 });
-Route::get('/seed', function () {
-    \Artisan::call('migrate --seed --force');
-    return nl2br(\Artisan::output());
-});
